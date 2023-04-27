@@ -14,6 +14,7 @@ class PortScanner:
         self.services = {}
         self.scanner = nmap.PortScanner()
 
+
     def network_discovery(self):
         ip = input("Enter IP address to scan (e.g. 192.168.1.0): ")
         subnet = input("Enter the subnet you want to scan (e.g. 24): ")
@@ -85,13 +86,70 @@ class PortScanner:
         except KeyError:
             return "Unknown"
         
+    def scan_all_ports(self, ip_address):
+        open_ports = []
+        scanner = nmap.PortScanner()
+        scanner.scan(ip_address, arguments='-p-')
+        for port in scanner[ip_address]['tcp']:
+            if scanner[ip_address]['tcp'][port]['state'] == 'open':
+                service_name = socket.getservbyport(port)
+                try:
+                    service_version = scanner[ip_address]['tcp'][port]['product'] + " " + scanner[ip_address]['tcp'][port]['version']
+                except KeyError:
+                    service_version = "Unknown"
+                open_ports.append((port, service_name, service_version))
+        if open_ports:
+            print("Open ports on {}: ".format(ip_address))
+            for port, service_name, service_version in open_ports:
+                print("Port {} ({}) is open, running {}".format(port, service_name, service_version))
+        else:
+            print("No open ports found on {}".format(ip_address))
+
+
+    def scan_vulnerabilities(self, ip_address, port):
+        scanner = nmap.PortScanner()
+        scanner.scan(ip_address, str(port), arguments='-sV -sC')
+        script_output = scanner[ip_address]['tcp'][port]['script']
+        if 'vulners' in script_output:
+            vulnerabilities = script_output['vulners']
+            print(f"Vulnerabilities found on port {port} of {ip_address}:")
+            for vulnerability in vulnerabilities:
+                print(f"\t- {vulnerability}")
+        else:
+            print(f"No vulnerabilities found on port {port} of {ip_address}")
+ 
+    def targeted_scan(self, port):
+        ip_address = input("Enter the IP address to scan: ")
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(0.1)
+        result = sock.connect_ex((ip_address, port))
+        if result == 0:
+            service_name = self.get_service_name(port)
+            print("Port {} ({}) is open on {}".format(port, service_name, ip_address))
+            details = input("Would you like to display more details about the service running on this port? (y/n) ")
+            if details.lower() == "y":
+                service_version = self.get_service_version(ip_address, port)
+                print("Version of {} on {}: {}".format(service_name, ip_address, service_version))
+            return True
+        else:
+            print("Port {} is closed on {}".format(port, ip_address))  
+            return False
+            
     def menu(self):
         print("Welcome to the Port Scanner!")
         while True:
             print("Please select an option:")
             print("1. Network Discovery")
+            #will list all active devices on the network
             print("2. Scan top ports")
-            print("3. Exit")
+            #will scan top ports and will display open and say what service is running and ask user if he want to see more details if yes will print version running on choosen port otherwice will display menu
+            print("3. Targeted Scan")
+            #will scan inputed ip for inputed port user will have option to see more (eg service running on and vulnerabilities)
+            print("4. Scan all ports")
+            #will scan all tcp ports and display open 
+            print("5. Vulnerability scan")
+            # will display all open port and say what service is on and will display vulnerabilities            
+            print("6. Exit")
             choice = input()
 
             if choice == '1':
@@ -111,6 +169,36 @@ class PortScanner:
                 self.top_ports(ip_address)
 
             elif choice == '3':
+                port = int(input("Enter the port number: "))
+                is_open = self.targeted_scan(port, ip_address)
+                if is_open:
+                    while True:
+                        option = input("Do you want to see more details? (y/n): ")
+                        if option.lower() == "y":
+                            print("More details about port {}...".format(port))
+
+                        elif option.lower() == "n":
+                            break
+                        else:
+                            print("Invalid input, please enter y or n")
+            elif choice == '4':
+                ip_address = input("Enter the IP address to scan: ")
+                open_ports = self.scan_all_ports(ip_address)
+                if open_ports:
+                    for port, service in open_ports.items():
+                        print("Port {} ({}) is open on {}".format(port, service, ip_address))
+                        details = input("Would you like to display more details abo4ut the service running on this port? (y/n) ")
+                        if details.lower() == "y":
+                            try:
+                                version = self.get_service_version(ip_address, port)
+                                print("Version of {} on {}: {}".format(service, ip_address, version))
+                            except KeyError:
+                                print("Version of {} on {}: Unknown".format(service, ip_address))
+            elif choice == '5':
+                ip_address = input("Enter the IP address to scan: ")
+                self.vuln_scan(ip_address)
+
+            elif choice == '6':
                 sys.exit()
 
             else:
